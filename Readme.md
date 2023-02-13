@@ -15,12 +15,12 @@ This is a toy loadbalancer that I built to better understand how Loadbalancers a
 
 ### Usage
 
-To start the loadbalancer
+#### Start Loadbalancer
 ```sh
 $ make run
 ```
 
-To enable Service Discovery
+#### To enable Service Discovery
 1. Import client library
 ```sh
 $ go get github.com/humanbeeng/go-lb/client
