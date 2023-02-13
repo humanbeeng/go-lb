@@ -18,3 +18,24 @@ TODO:
 - [ ] Hot reload config changes
 - [ ] Export metrics about healthy servers
 - [ ] CLI to add and remove backends and change strategy in realtime
+
+
+### Usage
+
+To start the loadbalancer
+```sh
+$ make run
+```
+
+To enable Service Discovery
+1. Import client library
+```sh
+$ go get github.com/humanbeeng/go-lb/client
+```
+
+2. Initialise client and pass the loadbalancer's address(lbAddr) and the server's listenaddress(*addr)
+```go
+conn, _ := net.Dial("tcp", lbAddr)
+c := client.Client{Conn: conn, Addr: *addr}
+c.Register()
+```
