@@ -1,4 +1,4 @@
-# Go-LB
+# Go Load Balancer
 
 This is a toy loadbalancer that I built to better understand how Loadbalancers and Service Discovery works.
 
