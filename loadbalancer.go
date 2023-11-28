@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/humanbeeng/go-lb/client"
+	"github.com/humanbeeng/multithreaded-lb/client"
 )
 
 type LBConfig struct {
@@ -53,9 +54,8 @@ func (lb *LoadBalancer) getNextBackend() (*Backend, error) {
 }
 
 func (lb *LoadBalancer) registerNewBackend(conn net.Conn) {
-
 	cmdReg := ParseRegisterCommand(conn)
-	log.Println("Register command called from", string(cmdReg.Addr))
+	slog.Info("Register command called from", string(cmdReg.Addr))
 	b := &Backend{
 		Addr: string(cmdReg.Addr),
 		Id:   len(lb.Backends) + 1,
@@ -66,8 +66,7 @@ func (lb *LoadBalancer) registerNewBackend(conn net.Conn) {
 }
 
 func (lb *LoadBalancer) deRegisterBackend(conn net.Conn) {
-
-	log.Println("Deregister command called from", conn.RemoteAddr().String())
+	slog.Info("Deregister command called from", conn.RemoteAddr().String())
 	cmdDereg := ParseDeRegisterCommand(conn)
 
 	for i, val := range lb.Backends {
@@ -76,14 +75,14 @@ func (lb *LoadBalancer) deRegisterBackend(conn net.Conn) {
 			break
 		}
 	}
-	log.Printf("Deregistered %v\n", string(cmdDereg.Addr))
+	slog.Info("Deregistered %v\n", string(cmdDereg.Addr))
 }
 
 func proxy(w http.ResponseWriter, r *http.Request, b *Backend) {
-	log.Printf("Redirecting %v to %v", r.URL.Path, b.Addr)
+	slog.Info("Redirecting %v to %v", r.URL.Path, b.Addr)
 	req, err := http.NewRequest(r.Method, "http://"+b.Addr, r.Body)
 	if err != nil {
-		log.Println("error request", err)
+		slog.Error("error request", err)
 	}
 	ctx, cancelFunc := context.WithTimeout(req.Context(), time.Second*TIMEOUT_LIMIT_IN_SECONDS)
 	defer cancelFunc()
@@ -97,7 +96,7 @@ func proxy(w http.ResponseWriter, r *http.Request, b *Backend) {
 		if errors.Is(err, context.DeadlineExceeded) {
 			w.WriteHeader(http.StatusGatewayTimeout)
 			w.Write([]byte("Request Timedout"))
-			log.Println("Request Timedout")
+			slog.Warn("Request Timedout")
 		}
 		return
 	}
@@ -109,15 +108,17 @@ func proxy(w http.ResponseWriter, r *http.Request, b *Backend) {
 		w.Header().Add(k, v[0])
 	}
 
-	io.Copy(w, res.Body)
-
+	wr, err := io.Copy(w, res.Body)
+	if err != nil {
+		slog.Error(err.Error())
+	}
+	slog.Info("Written", string(wr))
 }
 
 func (lb *LoadBalancer) handleRequest(w http.ResponseWriter, r *http.Request) {
-
 	b, err := lb.getNextBackend()
 	if err != nil {
-		log.Printf("Error: %v", err)
+		slog.Info("Error: %v", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte("Service Unavailable"))
 		return
@@ -155,7 +156,7 @@ func (lb *LoadBalancer) heartBeat(wg *sync.WaitGroup) {
 			pingAddr := "http://" + b.Addr + RESERVED_HEALTH_CHECK_PATH
 			_, err := http.Get(pingAddr)
 			if err != nil {
-				log.Printf("Deregistering: %v from pool\n", b.Addr)
+				slog.Info("Deregistering: %v from pool\n", b.Addr)
 				lb.Backends = append(lb.Backends[:i], lb.Backends[i+1:]...)
 			}
 		}
@@ -168,7 +169,7 @@ func (lb *LoadBalancer) startClientServer(wg *sync.WaitGroup) {
 
 	go func() {
 		defer wg.Done()
-		log.Printf("Client facing server started to listen on %v\n", lb.ListenAddr)
+		slog.Info("Client facing server started to listen on %v\n", lb.ListenAddr)
 		http.ListenAndServe(lb.ListenAddr, mux)
 	}()
 }
@@ -180,7 +181,7 @@ func (lb *LoadBalancer) startAdminServer(wg *sync.WaitGroup) {
 	}
 
 	defer wg.Done()
-	log.Printf("Admin server started to listen on %v\n", lb.AdminListenAddr)
+	slog.Info("Admin server started to listen on %v\n", lb.AdminListenAddr)
 
 	for {
 		adminConn, err := adminLn.Accept()
@@ -188,7 +189,7 @@ func (lb *LoadBalancer) startAdminServer(wg *sync.WaitGroup) {
 			if err == io.EOF {
 				return
 			}
-			log.Printf("accept error %v", err)
+			slog.Error("accept error %v", err)
 			return
 		}
 		go lb.handleAdminConnection(adminConn)
